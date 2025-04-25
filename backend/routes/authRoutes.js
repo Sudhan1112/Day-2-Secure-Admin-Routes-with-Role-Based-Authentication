@@ -1,43 +1,36 @@
-const express = require('express');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const { verifyToken } = require('../middleware/authMiddleware');
+const express = require("express");
+const mongoose = require("mongoose");
+const dotenv = require("dotenv");
+const authRoutes = require("./routes/authRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const cors = require("cors");
+dotenv.config();
 
-const router = express.Router();
+const app = express();
+var whitelist = ["http://localhost:5173", "http://localhost:3000"];
+var corsOptions = {
+  origin: function (origin, callback) {
+    if (whitelist.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+};
+// Middleware
+app.use(cors(corsOptions));
+app.use(express.json());
 
-// Register a new user
-router.post('/register', async (req, res) => {
-  const { username, password } = req.body;
+// Connect to MongoDB
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB Connected"))
+  .catch((err) => console.log("Error connecting to MongoDB", err));
 
-  // Issue: Password should be hashed before saving
-  const newUser = new User({
-    username,
-    password, // Not hashed
-  });
+// Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 
-  try {
-    await newUser.save();
-    res.status(201).send('User registered');
-  } catch (error) {
-    res.status(500).json({ message: 'Error registering user' });
-  }
-});
-
-// Login route
-router.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-
-  const user = await User.findOne({ username });
-
-  // Issue: No password comparison (should hash password and compare)
-  if (!user || user.password !== password) { // Incorrect password check
-    return res.status(401).json({ message: 'Invalid credentials' });
-  }
-
-  const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
-
-  res.json({ token });
-});
-
-module.exports = router;
+// Start the server
+const port = process.env.PORT || 5000;
+app.listen(port, () => console.log(`Server running on port ${port}`));
