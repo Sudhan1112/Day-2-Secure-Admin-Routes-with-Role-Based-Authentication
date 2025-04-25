@@ -1,36 +1,56 @@
 const express = require("express");
-const mongoose = require("mongoose");
-const dotenv = require("dotenv");
-const authRoutes = require("./routes/authRoutes");
-const adminRoutes = require("./routes/adminRoutes");
-const cors = require("cors");
-dotenv.config();
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const User = require("../models/User");
+const { verifyToken } = require("../middleware/authMiddleware");
 
-const app = express();
-var whitelist = ["http://localhost:5173", "http://localhost:3000"];
-var corsOptions = {
-  origin: function (origin, callback) {
-    if (whitelist.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-};
-// Middleware
-app.use(cors(corsOptions));
-app.use(express.json());
+const router = express.Router();
 
-// Connect to MongoDB
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch((err) => console.log("Error connecting to MongoDB", err));
+// Register a new user
+router.post("/register", async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    // Issue: Password should be hashed before saving
 
-// Routes
-app.use("/api/auth", authRoutes);
-app.use("/api/admin", adminRoutes);
+    const hashPass = await bcrypt.hash(password, 10);
 
-// Start the server
-const port = process.env.PORT || 5000;
-app.listen(port, () => console.log(`Server running on port ${port}`));
+    const newUser = new User({
+      username,
+      password: hashPass, // Not hashed
+    });
+
+    await newUser.save();
+    res.status(201).send("User registered");
+  } catch (error) {
+    res.status(500).json({ message: "Error registering user" });
+  }
+});
+
+// Login route
+router.post("/login", async (req, res) => {
+  const { username, password } = req.body;
+
+  const user = await User.findOne({ username });
+
+  // Issue: No password comparison (should hash password and compare)
+  const comparePassword = await bcrypt.compare(password, user.password);
+  if (!comparePassword) {
+    return res.status(401).send({ message: "Un-authenticated wrong password" });
+  }
+
+  const token = jwt.sign(
+    { id: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: "1h" }
+  );
+
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV == "production",
+    sameSite: true,
+  });
+
+  res.json({ token });
+});
+
+module.exports = router;
